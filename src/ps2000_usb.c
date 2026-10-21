@@ -8,22 +8,49 @@
 /* ========================================================================== */
 /*
  * USB Vendor ID for Pico Technology.
- * Reconstructed from sub_4B797: mov ecx, 0CE9h
+ * From sub_4B797: mov ecx, 0CE9h
  */
 #define PS2000_USB_VID            0x0CE9U
 
 /*
- * USB Product ID for PS2000 series.
- * Note: Multiple PIDs may exist for different models.
+ * FIX #202: Support multiple USB PIDs for different PS2000 models
+ * and firmware update modes.
+ *
+ * Found in disassembly at sub_4C3D0-4C520:
+ *   mov dword ptr [rax+10h], 0FFFF0CE9h  ; VID=0x0CE9, PID=0xFFFF
+ *   mov dword ptr [rax+10h], 0FFEE0CE9h  ; VID=0x0CE9, PID=0xFFEE
+ *   mov dword ptr [rax+10h], 5304B4h     ; VID=0x04B4, PID=0x0053
+ *   mov dword ptr [rax+10h], 0F304B4h    ; VID=0x04B4, PID=0x00F3
+ *   mov dword ptr [rax+10h], 861304B4h   ; VID=0x04B4, PID=0x1386
+ *
+ * These PIDs are used for:
+ * - 0x1009: Primary PS2000 series oscilloscopes
+ * - 0xFFFF, 0xFFEE: Alternative PicoScope models
+ * - 0x04B4:*: Cypress FX3 USB controller (firmware update mode)
  */
-#define PS2000_USB_PID            0x1009U
+static const uint16_t PS2000_USB_PIDS[] = {
+    0x1009,  // Primary PS2000 series
+    0xFFFF,  // Alternative PicoScope model
+    0xFFEE,  // Another PicoScope model
+};
+
+/*
+ * Cypress FX3 PIDs for firmware update mode.
+ * VID 0x04B4 is Cypress Semiconductor.
+ * These PIDs are used when the device is in bootloader mode.
+ */
+static const struct {
+    uint16_t vid;
+    uint16_t pid;
+} PS2000_CYPRESS_IDS[] = {
+    { 0x04B4, 0x0053 },  // Cypress FX3 bootloader
+    { 0x04B4, 0x00F3 },  // Cypress FX3 bootloader
+    { 0x04B4, 0x1386 },  // Cypress FX3 bootloader
+};
 
 /* USB interface and endpoint configuration */
 #define PS2000_USB_INTERFACE      0
 #define PS2000_USB_ALT_SETTING    1
-
-/* FIX #13: PS2000_USB_EP_IN and PS2000_USB_EP_OUT are now defined
- * in ps2000_internal.h. Removed duplicate definitions here. */
 
 /* ========================================================================== */
 /*                          USB HELPERS                                       */
@@ -31,26 +58,50 @@
 
 /**
  * @brief Map libusb error codes to internal status codes.
- *
- * Provides a consistent error mapping layer between libusb
- * and the PS2000 internal error system.
  */
 static ps2000_status_t _ps2000_usb_map_error(int libusb_err) {
     switch (libusb_err) {
         case LIBUSB_SUCCESS:            return PS2000_OK;
         case LIBUSB_ERROR_TIMEOUT:      return PS2000_ERR_TIMEOUT;
         case LIBUSB_ERROR_NO_DEVICE:    return PS2000_ERR_NOT_FOUND;
-        case LIBUSB_ERROR_NOT_FOUND:    return PS2000_ERR_NOT_FOUND;
         case LIBUSB_ERROR_BUSY:         return PS2000_ERR_BUSY;
         case LIBUSB_ERROR_NO_MEM:       return PS2000_ERR_MEMORY;
         case LIBUSB_ERROR_INVALID_PARAM: return PS2000_ERR_INVALID_PARAM;
-        case LIBUSB_ERROR_ACCESS:       return PS2000_ERR_NOT_OPENED;
         default:                        return PS2000_ERR_USB;
     }
 }
 
 /**
+ * @brief Check if a device matches PS2000 VID/PID criteria.
+ *
+ * FIX #202: Checks against all supported PIDs and Cypress bootloader IDs.
+ *
+ * @param vid Device vendor ID
+ * @param pid Device product ID
+ * @return true if device is a PS2000 or compatible device
+ */
+static bool _ps2000_usb_is_ps2000_device(uint16_t vid, uint16_t pid) {
+    /* Check primary Pico Technology VID */
+    if (vid == PS2000_USB_VID) {
+        for (size_t i = 0; i < sizeof(PS2000_USB_PIDS)/sizeof(PS2000_USB_PIDS[0]); i++) {
+            if (pid == PS2000_USB_PIDS[i]) {
+                return true;
+            }
+        }
+    }
+    /* Check Cypress FX3 bootloader VID/PID (firmware update mode) */
+    for (size_t i = 0; i < sizeof(PS2000_CYPRESS_IDS)/sizeof(PS2000_CYPRESS_IDS[0]); i++) {
+        if (vid == PS2000_CYPRESS_IDS[i].vid && pid == PS2000_CYPRESS_IDS[i].pid) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
  * @brief Find a PS2000 device by serial number.
+ *
+ * FIX #202: Now checks against multiple PIDs for compatibility.
  *
  * Reconstructed from sub_4E3D9 / sub_4E420 device enumeration logic.
  * Iterates through all USB devices, checking VID/PID and optionally
@@ -75,9 +126,9 @@ static libusb_device_handle* _ps2000_usb_find_device(libusb_context *ctx,
         if (libusb_get_device_descriptor(dev_list[i], &desc) != 0) {
             continue;
         }
-        /* Check VID/PID match */
-        if (desc.idVendor != PS2000_USB_VID ||
-            desc.idProduct != PS2000_USB_PID) {
+
+        /* FIX #202: Check against all supported VID/PID combinations */
+        if (!_ps2000_usb_is_ps2000_device(desc.idVendor, desc.idProduct)) {
             continue;
         }
 
@@ -105,6 +156,9 @@ static libusb_device_handle* _ps2000_usb_find_device(libusb_context *ctx,
 
         if (match) {
             found_handle = handle;
+            PS2000_LOG_INF("Found PS2000 device: VID=0x%04X PID=0x%04X SN=%s",
+                           desc.idVendor, desc.idProduct,
+                           ret > 0 ? (char*)sn_buf : "N/A");
             break;
         }
         libusb_close(handle);
