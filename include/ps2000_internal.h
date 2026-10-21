@@ -13,7 +13,6 @@ extern "C" {
 /* ========================================================================== */
 /*                           ERROR CODES                                      */
 /* ========================================================================== */
-
 typedef int32_t ps2000_status_t;
 
 #define PS2000_OK                     ((ps2000_status_t) 0)
@@ -37,7 +36,6 @@ typedef int32_t ps2000_status_t;
 /* ========================================================================== */
 /*                     INTERNAL CONSTANTS & LIMITS                            */
 /* ========================================================================== */
-
 #define PS2000_MAX_UNITS              127U
 #define PS2000_MAX_CHANNELS           4U
 #define PS2000_MAX_TRIGGERS           2U
@@ -57,7 +55,6 @@ typedef int32_t ps2000_status_t;
 /* ========================================================================== */
 /*            RECONSTRUCTED MATH CONSTANTS (semantic names)                   */
 /* ========================================================================== */
-
 /*
  * All values below are reconstructed from SSE/SSE2 instruction patterns
  * in the disassembly listing. Names reflect semantic usage context.
@@ -88,7 +85,8 @@ typedef int32_t ps2000_status_t;
 #define PS2000_DAC_FULL_SCALE         4095.5
 #define PS2000_DAC_MID_SCALE          2047.0
 #define PS2000_MATH_PI                3.141592653589793
-#define PS2000_AWG_REF_SAMPLE_RATE    4000000.0   /* 4 MHz */
+/* FIX #102: Updated to match DDS reference clock in gen.c (200 MHz) */
+#define PS2000_AWG_REF_SAMPLE_RATE    200000000.0  /* 200 MHz (DDS master clock) */
 #define PS2000_AWG_AMPLITUDE_SCALE    128.0
 #define PS2000_AWG_OFFSET_BIAS        (-16.0)
 #define PS2000_AWG_QUARTER_SCALE      0.25
@@ -128,7 +126,6 @@ typedef int32_t ps2000_status_t;
 /* ========================================================================== */
 /*                     IO COMMAND ENUM (from RTTI strings)                    */
 /* ========================================================================== */
-
 typedef enum {
     PS2000_IO_CMD_READ_XDATA = 0,
     PS2000_IO_CMD_WRITE_XDATA,
@@ -175,7 +172,6 @@ typedef enum {
 /* ========================================================================== */
 /*                     FUNCTION POINTER TYPES FOR OPS TABLE                   */
 /* ========================================================================== */
-
 /* Forward declaration */
 typedef struct _ps2000_context ps2000_context_t;
 
@@ -198,7 +194,6 @@ typedef double          (*ps2000_op_calc_dbl_t)(ps2000_context_t *ctx, uint32_t 
 /* ========================================================================== */
 /*                     OPERATIONS TABLE (sub_237C0 reconstruction)            */
 /* ========================================================================== */
-
 /**
  * @brief Device operations table.
  *
@@ -305,7 +300,6 @@ typedef struct _ps2000_operations {
 /* ========================================================================== */
 /*                     EMBEDDED SUB-STRUCTURES                                */
 /* ========================================================================== */
-
 /**
  * @brief USB host wrapper (libusb context management).
  * @note Size ~0xF8 bytes. Reconstructed from sub_4EDC0/sub_4EEA0.
@@ -321,6 +315,7 @@ typedef struct _ps2000_usb_host {
 /**
  * @brief USB device abstraction (IFirmwareInterface implementation).
  * @note Size 0x148 bytes (from mov esi, 148h before operator delete).
+ * FIX #100: Added semantic name for field at offset 0x40.
  */
 typedef struct _ps2000_usb_device {
     void                       *vtable;             /* +0x000: IFirmwareInterface */
@@ -328,7 +323,8 @@ typedef struct _ps2000_usb_device {
     libusb_device              *dev;                /* +0x010 */
     libusb_device_handle       *handle;             /* +0x018 */
     uint8_t                     serial[32];         /* +0x020 */
-    uint8_t                     gap_040[0x108];     /* +0x040 */
+    uint32_t                    device_state_flags; /* +0x040: was gap_040[0..3] */
+    uint8_t                     gap_044[0x104];     /* +0x044 */
 } ps2000_usb_device_t;
 
 /**
@@ -442,7 +438,6 @@ typedef struct _ps2000_streaming_block {
 /* ========================================================================== */
 /*                         TOP-LEVEL CONTEXT                                  */
 /* ========================================================================== */
-
 struct _ps2000_context {
     /* 0x000 */ ps2000_usb_host_t          usb_host;
     /* 0x0F8 */ ps2000_usb_device_t        usb_device;
@@ -470,7 +465,6 @@ struct _ps2000_context {
 /* ========================================================================== */
 /*                         GLOBAL STATE                                       */
 /* ========================================================================== */
-
 typedef struct _ps2000_global_state {
     ps2000_context_t            *contexts[PS2000_MAX_UNITS];
     uint32_t                     num_active_units;
@@ -481,7 +475,6 @@ typedef struct _ps2000_global_state {
 /* ========================================================================== */
 /*                           LOGGING                                          */
 /* ========================================================================== */
-
 typedef enum {
     PS2000_LOG_DEBUG = 0,
     PS2000_LOG_INFO  = 1,
@@ -508,6 +501,10 @@ ps2000_status_t _ps2000_init_global_state(void);
 void            _ps2000_init_cleanup_global(void);
 ps2000_status_t _ps2000_init_context(ps2000_context_t **ctx);
 void            _ps2000_init_destroy_context(ps2000_context_t *ctx);
+
+/* --- Core registration (FIX #6) --- */
+int             _ps2000_core_register_context(ps2000_context_t *ctx);
+void            _ps2000_core_unregister_context(ps2000_context_t *ctx);
 
 /* --- Operations dispatcher (_ps2000_ops_*) --- */
 ps2000_status_t _ps2000_ops_init_table(ps2000_context_t *ctx);
@@ -593,6 +590,10 @@ ps2000_status_t _ps2000_cfg_load_eeprom(ps2000_context_t *ctx);
 ps2000_status_t _ps2000_cfg_apply_calibration(ps2000_context_t *ctx,
                                               int16_t *raw_data,
                                               uint32_t num_samples);
+/* FIX #6: Added missing prototype */
+ps2000_status_t _ps2000_cfg_get_device_info(ps2000_context_t *ctx,
+                                            char *serial_buf, uint32_t buf_len,
+                                            uint32_t *hw_version);
 
 /* --- Trigger (_ps2000_trg_*) --- */
 ps2000_status_t _ps2000_trg_validate_config(ps2000_context_t *ctx,
@@ -618,6 +619,38 @@ ps2000_status_t _ps2000_osc_calc_timebase(uint32_t index, double *interval_ns);
 ps2000_status_t _ps2000_osc_validate_buffer(uint32_t pre_trig,
                                             uint32_t post_trig,
                                             uint32_t max_samples);
+/* FIX #6: Added missing prototypes */
+ps2000_status_t _ps2000_osc_get_timebase(ps2000_context_t *ctx,
+                                         uint32_t timebase_index, uint32_t num_samples,
+                                         double *interval_ns, uint32_t *max_samples);
+ps2000_status_t _ps2000_osc_run_block(ps2000_context_t *ctx,
+                                      uint32_t pre_trigger_samples, uint32_t post_trigger_samples);
+ps2000_status_t _ps2000_osc_get_values(ps2000_context_t *ctx,
+                                       uint32_t channel, int16_t *buffer, uint32_t start_index,
+                                       uint32_t num_samples, uint32_t *returned_samples);
+void _ps2000_osc_compute_decim_indices(int16_t ref_sample,
+                                       int16_t secondary_sample, int32_t carry,
+                                       int32_t *out_primary, int32_t *out_secondary, int32_t *out_div256);
+
+/* --- Signal Generator (_ps2000_gen_*) --- */
+/* FIX #6: Added missing prototypes */
+ps2000_status_t _ps2000_gen_set_builtin_internal(ps2000_context_t *ctx,
+                                                 double freq_hz, uint32_t wave_type, double amplitude, double offset);
+ps2000_status_t _ps2000_gen_set_arbitrary_internal(ps2000_context_t *ctx,
+                                                   const double *waveform, uint32_t num_samples, double normalized_freq);
+ps2000_status_t ps2000_gen_create_waveform(double *buffer,
+                                           uint32_t num_samples, uint32_t wave_type);
+ps2000_status_t ps2000_set_sig_gen_off(ps2000_context_t *ctx);
+
+/* --- HW Extended API (FIX #6) --- */
+ps2000_status_t _ps2000_hw_reset(ps2000_context_t *ctx);
+ps2000_status_t _ps2000_hw_flash_read_page(ps2000_context_t *ctx,
+                                           uint16_t page, uint8_t *data, uint16_t data_len);
+ps2000_status_t _ps2000_hw_flash_erase_page(ps2000_context_t *ctx, uint16_t page);
+ps2000_status_t _ps2000_hw_flash_protect(ps2000_context_t *ctx);
+ps2000_status_t _ps2000_hw_eeprom_read(ps2000_context_t *ctx,
+                                       uint16_t offset, uint8_t *data, uint16_t data_len);
+ps2000_status_t _ps2000_hw_eeprom_wait(ps2000_context_t *ctx);
 
 /* --- Utilities (_ps2000_util_*) --- */
 ps2000_status_t _ps2000_util_mutex_lock_safe(pthread_mutex_t *mtx,
