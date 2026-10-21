@@ -1,0 +1,29 @@
+libps2000_re/
+├── include/
+│   └── ps2000_internal.h
+├── src/
+│   ├── ps2000_core.c
+│   ├── ps2000_usb.c
+│   ├── ps2000_hw.c
+│   ├── ps2000_ops.c
+│   ├── ps2000_math.c
+│   ├── ps2000_osc.c
+│   ├── ps2000_gen.c
+│   ├── ps2000_cfg.c
+│   ├── ps2000_log.c
+│   ├── ps2000_trig.c
+│   ├── ps2000_stream.c
+│   ├── ps2000_thread.c
+│   ├── ps2000_fw.c
+│   ├── ps2000_init_tbl.c
+│   └── init_script_data.inc    ← Генерируется из JSON
+├── tools/
+│   ├── cfg_disasm.py
+│   ├── cfg_asm.py
+│   ├── init_tbl_disasm.py      ← Bin → JSON
+│   └── init_tbl_asm.py         ← JSON → C include
+├── data/
+│   ├── config_data.json
+│   └── init_script.json        ← Результат декомпиляции
+├── Makefile
+└── README.md

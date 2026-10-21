@@ -1,0 +1,30 @@
+libps2000_re/
+├── include/
+│   └── ps2000_internal.h          # Structures, constants, prototypes
+├── src/
+│   ├── ps2000_core.c              # Context lifecycle, global state
+│   ├── ps2000_usb.c               # libusb transport layer
+│   ├── ps2000_hw.c                # HAL: IO commands, registers, FPGA, ADC SPI
+│   ├── ps2000_ops.c               # Operations dispatcher (sub_237C0)
+│   ├── ps2000_math.c              # Reconstructed math functions
+│   ├── ps2000_osc.c               # Oscilloscope math, timebase
+│   ├── ps2000_gen.c               # Signal generator (DDS/AWG)
+│   ├── ps2000_cfg.c               # EEPROM loading, calibration
+│   ├── ps2000_log.c               # Logging subsystem
+│   ├── ps2000_trig.c              # Trigger validation
+│   ├── ps2000_stream.c            # Streaming capture
+│   ├── ps2000_thread.c            # Thread wrapper
+│   ├── ps2000_fw.c                # Firmware loader
+│   ├── ps2000_init_tbl.c          # Init script parser
+│   └── init_script_data.inc       # Generated from JSON
+├── tools/
+│   ├── cfg_disasm.py              # Bin -> JSON disassembler
+│   ├── cfg_asm.py                 # JSON -> C include assembler
+│   ├── init_tbl_disasm.py         # Init script Bin -> JSON
+│   └── init_tbl_asm.py            # Init script JSON -> C include
+├── data/
+│   ├── config_data.json           # Calibration & coefficients
+│   ├── init_script.json           # Disassembled init script
+│   └── init_script.bin            # Raw binary (extracted from .so)
+├── Makefile
+└── README.md

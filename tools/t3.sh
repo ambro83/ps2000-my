@@ -1,0 +1,1 @@
+python3 tools/init_tbl_asm.py init_script.json --out src/init_script_data.inc

@@ -1,0 +1,1 @@
+python3 tools/init_tbl_disasm.py init_script.bin --stats --out init_script.json
