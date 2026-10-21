@@ -4,7 +4,6 @@
 /* ========================================================================== */
 /*                     STUB IMPLEMENTATIONS                                   */
 /* ========================================================================== */
-
 int _ps2000_ops_stub_zero(void) {
     return 0;
 }
@@ -12,7 +11,6 @@ int _ps2000_ops_stub_zero(void) {
 /* ========================================================================== */
 /*                     IDENTITY AND BASIC INFO                                */
 /* ========================================================================== */
-
 int _ps2000_ops_get_identity(ps2000_context_t *ctx) {
     if (!ctx) return 0;
     return (int)(intptr_t)ctx;
@@ -52,7 +50,6 @@ int _ps2000_ops_get_mode_count(ps2000_context_t *ctx) {
 bool _ps2000_ops_check_capability(ps2000_context_t *ctx, uint8_t bit) {
     if (!ctx) return false;
     if (bit > 58) return false;
-
     uint64_t mask = PS2000_CAPABILITIES_MASK;
     mask >>= bit;
     mask = ~mask;  /* NOT — inverted logic: capability present when original bit = 0 */
@@ -96,17 +93,13 @@ int _ps2000_ops_validate_siggen_freq(ps2000_context_t *ctx,
                                      double freq_normalized,
                                      uint32_t awg_samples) {
     if (!ctx) return 0;
-
     /* VERIFIED: dword_A4C84 = 100.0, dword_A4C88 = -100.0 */
     const double MIN_FREQ = -100.0;
     const double MAX_FREQ = 100.0;
-
     if (freq_normalized < MIN_FREQ || freq_normalized > MAX_FREQ) {
         return 0;
     }
-
     if (awg_samples > PS2000_AWG_MAX_SAMPLES) return 0;
-
     return 1;
 }
 
@@ -126,21 +119,14 @@ int _ps2000_ops_validate_siggen_freq(ps2000_context_t *ctx,
  *
  * For reconstruction purposes, we zero siggen.ext_param (offset 0x392)
  * and the field at usb_device offset 0x0C.
+ * FIX #5: Use named field device_state_flags.
  */
 int _ps2000_ops_siggen_reset(ps2000_context_t *ctx) {
     if (!ctx) return 0;
-
     /* Zero awg_ext_param (offset 0x392 relative to context) */
     ctx->siggen.ext_param = 0;
-
-    /*
-     * FIX #17 VERIFIED: Zero the field at context offset 0x104.
-     * This is in usb_device block: 0x104 - 0x0F8 = 0x0C offset.
-     * We zero the first 4 bytes of usb_device.gap_040 as the
-     * closest reconstruction of the original write.
-     */
-    memset(ctx->usb_device.gap_040, 0, 4);
-
+    /* FIX #5: Use named field instead of gap write */
+    ctx->usb_device.device_state_flags = 0;
     return 1;
 }
 
@@ -156,9 +142,7 @@ int _ps2000_ops_siggen_reset(ps2000_context_t *ctx) {
  */
 int _ps2000_ops_siggen_default_init(ps2000_context_t *ctx) {
     if (!ctx) return 0;
-
     ctx->siggen.config = PS2000_SIGGEN_DEFAULT;
-
     /*
      * FIX #11 VERIFIED: Compare capabilities byte with 0x10.
      * Original: cmp byte ptr [rdi+235h], 10h
@@ -167,14 +151,12 @@ int _ps2000_ops_siggen_default_init(ps2000_context_t *ctx) {
     if (ctx->info.capabilities == 0x10) {
         ctx->siggen.awg_config_flag = 1;
     }
-
     return 1;
 }
 
 /* ========================================================================== */
 /*                     STATE AND MODE                                         */
 /* ========================================================================== */
-
 int _ps2000_ops_check_timebase_mode(ps2000_context_t *ctx) {
     if (!ctx) return 0;
     return (ctx->device_mode != PS2000_DEVICE_MODE_SPECIAL) ? 1 : 0;
@@ -198,7 +180,6 @@ int _ps2000_ops_check_timebase_mode(ps2000_context_t *ctx) {
  */
 int _ps2000_ops_get_state(ps2000_context_t *ctx) {
     if (!ctx) return 0;
-
     /*
      * FIX #12 VERIFIED: The original reads from usb_device block offsets.
      * Offset 0x112 from context = 0x1A into usb_device (serial area).
@@ -213,12 +194,9 @@ int _ps2000_ops_get_state(ps2000_context_t *ctx) {
 
 int _ps2000_ops_check_device_state(ps2000_context_t *ctx) {
     if (!ctx) return 0;
-
     ctx->capture.capture_state = 0;
-
     /* Query hardware first (sub_13CF0) */
     _ps2000_ops_update_device_state(ctx);
-
     if (ctx->capture.capture_state == PS2000_DEVICE_STATE_SPECIAL) {
         return 1;
     }
@@ -227,7 +205,6 @@ int _ps2000_ops_check_device_state(ps2000_context_t *ctx) {
 
 void _ps2000_ops_update_device_state(ps2000_context_t *ctx) {
     if (!ctx || !ctx->usb_host.handle) return;
-
     uint16_t status_reg = 0;
     ps2000_status_t st = _ps2000_hw_read_reg(ctx, 0x00, &status_reg);
     if (st == PS2000_OK) {
@@ -249,12 +226,9 @@ int _ps2000_ops_check_channel(ps2000_context_t *ctx) {
 /* ========================================================================== */
 /*                     OPERATIONS TABLE INITIALIZATION                        */
 /* ========================================================================== */
-
 ps2000_status_t _ps2000_ops_init_table(ps2000_context_t *ctx) {
     if (!ctx) return PS2000_ERR_INVALID_PARAM;
-
     int32_t variant = ctx->device_variant;
-
     if (variant < PS2000_DEVICE_VARIANT_2) {
         PS2000_LOG_WRN("Unsupported device variant: %d", variant);
         return PS2000_ERR_NOT_IMPLEMENTED;
@@ -317,6 +291,5 @@ ps2000_status_t _ps2000_ops_init_table(ps2000_context_t *ctx) {
             PS2000_LOG_WRN("Unknown device variant: %d, using defaults", variant);
             break;
     }
-
     return PS2000_OK;
 }

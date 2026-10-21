@@ -6,7 +6,6 @@
 /* ========================================================================== */
 /*                       INTERNAL USB CONSTANTS                               */
 /* ========================================================================== */
-
 /*
  * USB Vendor ID for Pico Technology.
  * Reconstructed from sub_4B797: mov ecx, 0CE9h
@@ -71,13 +70,11 @@ static libusb_device_handle* _ps2000_usb_find_device(libusb_context *ctx,
     }
 
     libusb_device_handle *found_handle = NULL;
-
     for (ssize_t i = 0; i < cnt; i++) {
         struct libusb_device_descriptor desc;
         if (libusb_get_device_descriptor(dev_list[i], &desc) != 0) {
             continue;
         }
-
         /* Check VID/PID match */
         if (desc.idVendor != PS2000_USB_VID ||
             desc.idProduct != PS2000_USB_PID) {
@@ -95,7 +92,6 @@ static libusb_device_handle* _ps2000_usb_find_device(libusb_context *ctx,
         unsigned char sn_buf[32] = {0};
         ret = libusb_get_string_descriptor_ascii(
             handle, desc.iSerialNumber, sn_buf, sizeof(sn_buf));
-
         bool match = false;
         if (serial == 0) {
             /* Open first found device */
@@ -111,10 +107,8 @@ static libusb_device_handle* _ps2000_usb_find_device(libusb_context *ctx,
             found_handle = handle;
             break;
         }
-
         libusb_close(handle);
     }
-
     libusb_free_device_list(dev_list, 1);
     return found_handle;
 }
@@ -248,6 +242,14 @@ ps2000_status_t _ps2000_usb_control_transfer(ps2000_context_t *ctx,
                                              uint8_t *data, uint16_t len) {
     if (!ctx || !ctx->usb_host.handle) return PS2000_ERR_NOT_OPENED;
 
+    /* FIX #9: Zero-length transfers are valid (command-only, no data phase) */
+    if (len == 0 && data == NULL) {
+        int transferred = libusb_control_transfer(
+            ctx->usb_host.handle, req_type, req, val, idx,
+            NULL, 0, PS2000_USB_TIMEOUT_MS);
+        return (transferred >= 0) ? PS2000_OK : _ps2000_usb_map_error(transferred);
+    }
+
     int transferred = libusb_control_transfer(
         ctx->usb_host.handle,
         req_type,
@@ -264,13 +266,11 @@ ps2000_status_t _ps2000_usb_control_transfer(ps2000_context_t *ctx,
                        "idx=0x%04X err=%d", req, val, idx, transferred);
         return _ps2000_usb_map_error(transferred);
     }
-
     if ((uint16_t)transferred != len) {
         PS2000_LOG_WRN("Short control transfer: expected %u, got %d",
                        len, transferred);
         return PS2000_ERR_USB;
     }
-
     return PS2000_OK;
 }
 
@@ -306,12 +306,10 @@ ps2000_status_t _ps2000_usb_bulk_transfer(ps2000_context_t *ctx, uint8_t ep,
                        ep, len, ret);
         return _ps2000_usb_map_error(ret);
     }
-
     if ((uint32_t)transferred != len) {
         PS2000_LOG_WRN("Short bulk transfer: expected %u, got %d",
                        len, transferred);
         return PS2000_ERR_USB;
     }
-
     return PS2000_OK;
 }

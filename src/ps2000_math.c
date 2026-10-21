@@ -24,7 +24,6 @@
  */
 double _ps2000_math_round_fast(double val) {
     const double magic = PS2000_FAST_ROUND_MAGIC; /* 2^52 */
-
     /* Extract absolute value using bit manipulation (andpd pattern) */
     uint64_t bits;
     memcpy(&bits, &val, sizeof(bits));
@@ -36,7 +35,6 @@ double _ps2000_math_round_fast(double val) {
     if (abs_val >= magic) {
         return val;
     }
-
     /* The actual rounding: (val + 2^52) - 2^52 */
     double rounded = (val + magic) - magic;
     return rounded;
@@ -69,11 +67,9 @@ int16_t _ps2000_math_adc_denormalize(double normalized) {
     double val = normalized * PS2000_ADC_FULL_SCALE;
     double rounded = _ps2000_math_round_fast(val);
     int32_t result = (int32_t)(int64_t)rounded;
-
     /* Clamp to int16 range */
     if (result > 32767) result = 32767;
     if (result < -32768) result = -32768;
-
     return (int16_t)result;
 }
 
@@ -96,21 +92,16 @@ double _ps2000_math_timebase_interval(uint32_t index) {
     /* Base interval calculation: 10^(index * 0.5) scaled to nanoseconds */
     double exponent = (double)index * PS2000_TIMEBASE_ROUND_BIAS;
     double interval_s = pow(PS2000_TIMEBASE_LOG_BASE, exponent);
-
     /* Convert to nanoseconds */
     double interval_ns = interval_s * PS2000_TIMEBASE_NS_PER_SEC;
-
     /* Apply unit step correction */
     interval_ns *= PS2000_TIMEBASE_UNIT_STEP;
-
     /* Clamp to INT32_MAX (from qword_A4C50 comparison in original) */
     if (interval_ns > PS2000_TIMEBASE_MAX_INTERVAL) {
         interval_ns = PS2000_TIMEBASE_MAX_INTERVAL;
     }
-
     /* Round to nearest integer nanosecond */
     interval_ns = _ps2000_math_round_fast(interval_ns);
-
     return interval_ns;
 }
 
@@ -122,24 +113,18 @@ double _ps2000_math_timebase_interval(uint32_t index) {
  */
 int32_t _ps2000_math_timing_calc(int32_t raw_val, double interval, double offset) {
     double val = (double)raw_val * interval;
-
     /* Division by percent scale (100.0) for percentage-based delays */
     val /= PS2000_TIMEBASE_PERCENT_SCALE;
-
     /* Apply user offset */
     val += offset;
-
     /* Round-to-nearest with 0.5 bias (TIMEBASE_ROUND_BIAS) */
     val += PS2000_TIMEBASE_ROUND_BIAS;
-
     /* Truncate to integer (cvttsd2si semantics) */
     int32_t result = (int32_t)(int64_t)val;
-
     /* Clamp to valid range */
     if (result > (int32_t)PS2000_TIMEBASE_MAX_INTERVAL) {
         result = (int32_t)PS2000_TIMEBASE_MAX_INTERVAL;
     }
-
     return result;
 }
 
@@ -172,27 +157,22 @@ int32_t _ps2000_math_timing_calc(int32_t raw_val, double interval, double offset
 int16_t _ps2000_math_adc_convert(int16_t raw, double gain, double corr_offset) {
     /* Step 1: Normalize raw value to [-1.0, +1.0] */
     double normalized = (double)raw / PS2000_ADC_FULL_SCALE;
-
     /* Step 2: Apply calibrated gain */
     double gained = normalized * gain;
-
     /* Step 3: Add correction offset */
     double calibrated = gained + corr_offset;
-
     /* Step 4: Scale back to int16 range */
     double scaled = calibrated * PS2000_ADC_INT16_SCALE;
-
+    
     /* Step 5: Round to nearest integer */
     double rounded = _ps2000_math_round_fast(scaled);
+    
+    /* FIX #7: Clamp in double domain BEFORE integer cast to avoid UB */
+    if (rounded > 32767.0) rounded = 32767.0;
+    if (rounded < -32768.0) rounded = -32768.0;
+    
     int32_t converted = (int32_t)(int64_t)rounded;
-
-    /* Step 6: Range check via lea/cmp trick: [rax+7FFEh] vs 0xFFFCh */
-    uint32_t range_check = (uint32_t)(converted + 0x7FFE);
-    if (range_check > 0xFFFCU) {
-        if (converted > 32767) converted = 32767;
-        if (converted < -32768) converted = -32768;
-    }
-
+    
     return (int16_t)converted;
 }
 
@@ -209,11 +189,9 @@ int16_t _ps2000_math_adc_convert(int16_t raw, double gain, double corr_offset) {
 uint32_t _ps2000_math_stream_pos(uint32_t base, uint32_t increment, double scale) {
     double scaled_inc = (double)increment * scale;
     uint32_t int_inc = (uint32_t)(int64_t)_ps2000_math_round_fast(scaled_inc);
-
     uint32_t aligned = base + int_inc;
     /* Round UP to next 256-byte boundary */
     aligned = (aligned + 0xFFU) & 0xFFFFFF00U;
-
     return aligned;
 }
 
@@ -232,14 +210,11 @@ uint32_t _ps2000_math_stream_pos(uint32_t base, uint32_t increment, double scale
 double _ps2000_math_awg_to_dac(double normalized) {
     /* Scale to DAC range: [-1, 1] -> [0, 4095] */
     double dac_val = (normalized * PS2000_DAC_MID_SCALE) + PS2000_DAC_MID_SCALE + 1.0;
-
     /* Round to nearest DAC code */
     dac_val = _ps2000_math_round_fast(dac_val);
-
     /* Clamp to valid 12-bit range */
     if (dac_val > PS2000_DAC_FULL_SCALE) dac_val = PS2000_DAC_FULL_SCALE;
     if (dac_val < 0.0) dac_val = 0.0;
-
     return dac_val;
 }
 

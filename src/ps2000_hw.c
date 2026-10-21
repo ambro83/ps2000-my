@@ -7,7 +7,6 @@
 /* ========================================================================== */
 /*                       INTERNAL HW CONSTANTS                                */
 /* ========================================================================== */
-
 #define PS2000_HW_INIT_STAGE_IDLE       0
 #define PS2000_HW_INIT_STAGE_MCU        1
 #define PS2000_HW_INIT_STAGE_FPGA       2
@@ -22,7 +21,8 @@
 #define PS2000_PRELAUNCH_MAGIC          0x1CED9168U
 #define PS2000_PRELAUNCH_VERSION        0x11E6U
 #define PS2000_APPLY_FIX_MAGIC_A        0x1CED9168U
-#define PS2000_APPLY_FIX_MAGIC_B        0x0ED5A2205U
+/* FIX #1: Corrected value to fit in uint32_t (8 hex digits) */
+#define PS2000_APPLY_FIX_MAGIC_B        0xED5A2205U
 #define PS2000_APPLY_FIX_VERSION        0x39BCU
 
 #define PS2000_DEVICE_STATE_READY       5
@@ -89,19 +89,17 @@ ps2000_status_t _ps2000_hw_io_cmd(ps2000_context_t *ctx, ps2000_io_cmd_t cmd,
     uint16_t wIndex = value;
 
     ps2000_status_t status = _ps2000_usb_control_transfer(ctx,
-        LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_ENDPOINT_OUT,
-        PS2000_HW_VENDOR_REQ_IO,
-        wValue,
-        wIndex,
-        (uint8_t*)&pkt, sizeof(pkt));
-
+                                                          LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_ENDPOINT_OUT,
+                                                          PS2000_HW_VENDOR_REQ_IO,
+                                                          wValue,
+                                                          wIndex,
+                                                          (uint8_t*)&pkt, sizeof(pkt));
     if (status != PS2000_OK) {
         PS2000_LOG_ERR("IO command %d failed: %d", (int)cmd, status);
     } else {
         PS2000_LOG_DBG("IO command %d: addr=0x%04X val=0x%04X",
                        (int)cmd, addr, value);
     }
-
     return status;
 }
 
@@ -117,14 +115,11 @@ ps2000_status_t _ps2000_hw_io_cmd(ps2000_context_t *ctx, ps2000_io_cmd_t cmd,
 ps2000_status_t _ps2000_hw_write_reg(ps2000_context_t *ctx,
                                      uint16_t reg, uint16_t val) {
     if (!ctx) return PS2000_ERR_INVALID_PARAM;
-
     ps2000_status_t status = _ps2000_hw_io_cmd(
         ctx, PS2000_IO_CMD_WRITE_FPGA_REGISTER, reg, val);
-
     if (status == PS2000_OK) {
         PS2000_LOG_DBG("HW Write Reg 0x%04X = 0x%04X", reg, val);
     }
-
     return status;
 }
 
@@ -141,15 +136,13 @@ ps2000_status_t _ps2000_hw_read_reg(ps2000_context_t *ctx,
 
     /* Step 1: Send read command via Control OUT (zero-length data phase) */
     uint16_t wValue = ((uint16_t)PS2000_IO_CMD_READ_FPGA_REGISTER << 8)
-                    | (reg & 0xFF);
-
+                      | (reg & 0xFF);
     ps2000_status_t status = _ps2000_usb_control_transfer(ctx,
-        LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_ENDPOINT_OUT,
-        PS2000_HW_VENDOR_REQ_IO,
-        wValue,
-        0,
-        NULL, 0);
-
+                                                          LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_ENDPOINT_OUT,
+                                                          PS2000_HW_VENDOR_REQ_IO,
+                                                          wValue,
+                                                          0,
+                                                          NULL, 0);
     if (status != PS2000_OK) {
         PS2000_LOG_ERR("Read reg command failed for reg 0x%04X: %d",
                        reg, status);
@@ -169,7 +162,6 @@ ps2000_status_t _ps2000_hw_read_reg(ps2000_context_t *ctx,
         &transferred,
         PS2000_USB_TIMEOUT_MS
     );
-
     if (ret != LIBUSB_SUCCESS || transferred != 2) {
         PS2000_LOG_ERR("Bulk read for reg 0x%04X failed: ret=%d transferred=%d",
                        reg, ret, transferred);
@@ -178,23 +170,18 @@ ps2000_status_t _ps2000_hw_read_reg(ps2000_context_t *ctx,
 
     *val = (uint16_t)resp[0] | ((uint16_t)resp[1] << 8);
     PS2000_LOG_DBG("HW Read Reg 0x%04X = 0x%04X", reg, *val);
-
     return PS2000_OK;
 }
 
 ps2000_status_t _ps2000_hw_adc_spi_write(ps2000_context_t *ctx,
                                          uint8_t ch, uint16_t val) {
     if (!ctx || ch >= PS2000_MAX_CHANNELS) return PS2000_ERR_INVALID_PARAM;
-
     ctx->streaming.adc_spi_cache[ch] = val;
-
     ps2000_status_t status = _ps2000_hw_io_cmd(
         ctx, PS2000_IO_CMD_WRITE_ADC_SPI, (uint16_t)ch, val);
-
     if (status == PS2000_OK) {
         PS2000_LOG_DBG("ADC SPI Write ch%u = 0x%04X", ch, val);
     }
-
     return status;
 }
 
@@ -248,37 +235,30 @@ ps2000_status_t _ps2000_hw_load_fpga(ps2000_context_t *ctx,
 
 int _ps2000_hw_apply_fix(uint32_t magic, uint16_t version) {
     int result = 0;
-
     if (magic == PS2000_APPLY_FIX_MAGIC_A) {
         result = (version != PS2000_PRELAUNCH_VERSION) ? 1 : 0;
         g_hw_fix_flag = (uint16_t)result;
         return result;
     }
-
     if (magic == PS2000_APPLY_FIX_MAGIC_B) {
         result = (version == PS2000_APPLY_FIX_VERSION) ? 1 : 0;
         g_hw_fix_result = (uint16_t)result;
         return result;
     }
-
     return 0;
 }
 
 ps2000_status_t _ps2000_hw_prelaunch(void) {
     _ps2000_hw_apply_fix(PS2000_PRELAUNCH_MAGIC, PS2000_PRELAUNCH_VERSION);
-
     if (g_hw_init_flag != 0) {
         PS2000_LOG_DBG("PreLaunch: already initialized");
         return PS2000_OK;
     }
-
     g_hw_init_flag = 1;
-
     if (g_hw_fix_flag != 0) {
         PS2000_LOG_WRN("PreLaunch: fix flag set, skipping full init");
         return PS2000_OK;
     }
-
     PS2000_LOG_INF("PreLaunch: hardware ready");
     return PS2000_OK;
 }
@@ -294,7 +274,6 @@ ps2000_status_t _ps2000_hw_prelaunch(void) {
  */
 ps2000_status_t _ps2000_hw_init_sequence(ps2000_context_t *ctx) {
     if (!ctx) return PS2000_ERR_INVALID_PARAM;
-
     ps2000_status_t status;
 
     /* Stage 1: MCU handshake */
@@ -373,24 +352,19 @@ ps2000_status_t _ps2000_hw_init_sequence(ps2000_context_t *ctx) {
 
 void _ps2000_hw_cleanup(ps2000_context_t *ctx) {
     if (!ctx) return;
-
     ctx->info.fpga_loaded = 0;
-
     for (uint32_t ch = 0; ch < PS2000_MAX_CHANNELS; ch++) {
         ctx->streaming.adc_spi_cache[ch] = 0;
     }
-
     PS2000_LOG_DBG("Hardware state cleaned up");
 }
 
 ps2000_status_t _ps2000_hw_reset(ps2000_context_t *ctx) {
     if (!ctx) return PS2000_ERR_INVALID_PARAM;
-
     ctx->capture.capture_state = 0;
     ctx->streaming.stream_write_pos = 0;
     ctx->capture.trigger_enabled = 0;
     ctx->capture.trigger_threshold = 0;
-
     PS2000_LOG_INF("Hardware reset complete");
     return PS2000_OK;
 }
@@ -420,13 +394,11 @@ ps2000_status_t _ps2000_hw_flash_read_page(ps2000_context_t *ctx,
         &transferred,
         PS2000_USB_TIMEOUT_MS
     );
-
     if (ret != LIBUSB_SUCCESS || transferred != data_len) {
         PS2000_LOG_ERR("Flash page read failed: ret=%d transferred=%d",
                        ret, transferred);
         return PS2000_ERR_USB;
     }
-
     return PS2000_OK;
 }
 
@@ -466,13 +438,11 @@ ps2000_status_t _ps2000_hw_eeprom_read(ps2000_context_t *ctx,
         &transferred,
         PS2000_USB_TIMEOUT_MS
     );
-
     if (ret != LIBUSB_SUCCESS || transferred != data_len) {
         PS2000_LOG_ERR("EEPROM read failed: ret=%d transferred=%d",
                        ret, transferred);
         return PS2000_ERR_USB;
     }
-
     return PS2000_OK;
 }
 

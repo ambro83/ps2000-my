@@ -5,7 +5,6 @@
 /* ========================================================================== */
 /*                     INIT SCRIPT PARSER                                     */
 /* ========================================================================== */
-
 #define INIT_OP_NOP             0x00U
 #define INIT_OP_WRITE_REG       0x01U
 #define INIT_OP_WRITE_XDATA     0x02U
@@ -19,6 +18,7 @@
  * @brief Parse and execute initialization script from binary blob.
  *
  * FIX #13: _ps2000_hw_write_reg now takes uint16_t reg parameter.
+ * FIX #3: Correctly read 16-bit register address from script.
  */
 ps2000_status_t _ps2000_init_tbl_execute(ps2000_context_t *ctx,
                                          const uint8_t *script,
@@ -32,7 +32,6 @@ ps2000_status_t _ps2000_init_tbl_execute(ps2000_context_t *ctx,
 
     while (pos < script_len) {
         uint8_t opcode = script[pos++];
-
         if (opcode == INIT_OP_END) {
             PS2000_LOG_INF("Init script completed: %u commands", cmd_count);
             return PS2000_OK;
@@ -43,16 +42,15 @@ ps2000_status_t _ps2000_init_tbl_execute(ps2000_context_t *ctx,
         switch (opcode) {
             case INIT_OP_NOP:
                 break;
-
             case INIT_OP_WRITE_REG: {
-                if (pos + 3 > script_len) goto truncated;
-                uint16_t reg = (uint16_t)script[pos];  /* FIX #13: uint16_t */
-                uint16_t val = (uint16_t)script[pos+1] | ((uint16_t)script[pos+2] << 8);
+                /* FIX #3: Read 16-bit reg and 16-bit val (4 bytes payload) */
+                if (pos + 4 > script_len) goto truncated;
+                uint16_t reg = (uint16_t)script[pos] | ((uint16_t)script[pos+1] << 8);
+                uint16_t val = (uint16_t)script[pos+2] | ((uint16_t)script[pos+3] << 8);
                 st = _ps2000_hw_write_reg(ctx, reg, val);
-                pos += 3;
+                pos += 4;
                 break;
             }
-
             case INIT_OP_ADC_SPI: {
                 if (pos + 3 > script_len) goto truncated;
                 uint8_t ch = script[pos];
@@ -61,7 +59,6 @@ ps2000_status_t _ps2000_init_tbl_execute(ps2000_context_t *ctx,
                 pos += 3;
                 break;
             }
-
             case INIT_OP_DELAY_MS: {
                 if (pos + 2 > script_len) goto truncated;
                 uint16_t ms = (uint16_t)script[pos] | ((uint16_t)script[pos+1] << 8);
@@ -70,7 +67,6 @@ ps2000_status_t _ps2000_init_tbl_execute(ps2000_context_t *ctx,
                 pos += 2;
                 break;
             }
-
             default:
                 PS2000_LOG_WRN("Unknown init opcode: 0x%02X at offset %u", opcode, pos - 1);
                 return PS2000_ERR_INVALID_PARAM;
@@ -80,7 +76,6 @@ ps2000_status_t _ps2000_init_tbl_execute(ps2000_context_t *ctx,
             PS2000_LOG_ERR("Init cmd 0x%02X failed: %d", opcode, st);
             return st;
         }
-
         cmd_count++;
     }
 
