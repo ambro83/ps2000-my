@@ -119,13 +119,13 @@ int _ps2000_ops_validate_siggen_freq(ps2000_context_t *ctx,
  *
  * For reconstruction purposes, we zero siggen.ext_param (offset 0x392)
  * and the field at usb_device offset 0x0C.
- * FIX #5: Use named field device_state_flags.
+ * FIX #100: Use named field device_state_flags.
  */
 int _ps2000_ops_siggen_reset(ps2000_context_t *ctx) {
     if (!ctx) return 0;
     /* Zero awg_ext_param (offset 0x392 relative to context) */
     ctx->siggen.ext_param = 0;
-    /* FIX #5: Use named field instead of gap write */
+    /* FIX #100: Use named field instead of gap write */
     ctx->usb_device.device_state_flags = 0;
     return 1;
 }
