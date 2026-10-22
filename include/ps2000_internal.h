@@ -43,6 +43,10 @@ typedef int32_t ps2000_status_t;
 #define PS2000_EEPROM_MAGIC           0x5053324BU
 #define PS2000_DRIVER_VERSION         "3.0.150.6187"
 
+/* FIX #6: Added missing constants */
+#define PS2000_MAX_TIMEBASE           19U
+#define PS2000_OSC_MAX_SAMPLES        0xFFFEU
+
 /* USB endpoint addresses (from sub_4E3D9) */
 #define PS2000_USB_EP_IN              0x81U
 #define PS2000_USB_EP_OUT             0x01U
@@ -55,11 +59,6 @@ typedef int32_t ps2000_status_t;
 /* ========================================================================== */
 /*            RECONSTRUCTED MATH CONSTANTS (semantic names)                   */
 /* ========================================================================== */
-/*
- * All values below are reconstructed from SSE/SSE2 instruction patterns
- * in the disassembly listing. Names reflect semantic usage context.
- */
-
 /* --- Fast rounding via 2^52 bias (sub_203A0, sub_3AA64, sub_38CB8) --- */
 #define PS2000_FAST_ROUND_MAGIC       4503599627370496.0  /* 2^52 */
 #define PS2000_DOUBLE_ABS_MASK        0x7FFFFFFFFFFFFFFFULL
@@ -175,6 +174,14 @@ typedef enum {
 /* Forward declaration */
 typedef struct _ps2000_context ps2000_context_t;
 
+/* FIX #1: Added new function pointer types for Advanced Trigger and Streaming */
+typedef int (*ps2000_op_adv_trig_props_t)(ps2000_context_t *ctx, void *props, int16_t n_props, int32_t auto_ms);
+typedef int (*ps2000_op_adv_trig_conds_t)(ps2000_context_t *ctx, void *conds, int16_t n_conds);
+typedef int (*ps2000_op_adv_trig_dirs_t)(ps2000_context_t *ctx, uint16_t dirs);
+typedef int (*ps2000_op_pwq_t)(ps2000_context_t *ctx, void *conds, int16_t n_conds, uint16_t dir, uint32_t lower, uint32_t upper, uint32_t type);
+typedef int (*ps2000_op_adv_trig_delay_t)(ps2000_context_t *ctx, uint32_t delay, float pre_delay);
+typedef int (*ps2000_op_start_streaming_t)(ps2000_context_t *ctx, uint16_t interval_us, uint32_t max_samples, int16_t auto_stop);
+
 typedef int             (*ps2000_op_void_t)(void);
 typedef int             (*ps2000_op_ctx_t)(ps2000_context_t *ctx);
 typedef int             (*ps2000_op_ctx_u32_t)(ps2000_context_t *ctx, uint32_t val);
@@ -200,8 +207,7 @@ typedef double          (*ps2000_op_calc_dbl_t)(ps2000_context_t *ctx, uint32_t 
  * Reconstructed from sub_237C0 which populates function pointers
  * based on device variant (context offset +0xAA).
  *
- * The table contains ~90 methods; approximately 60 are implemented,
- * the rest are stubs returning 0 (matching original nullsub/xor eax,eax).
+ * FIX #1: Extended with Advanced Trigger and Streaming delegates.
  */
 typedef struct _ps2000_operations {
     /* Identity and basic info */
@@ -266,6 +272,16 @@ typedef struct _ps2000_operations {
     ps2000_op_ctx_u32_t         calc_offset;            /* sub_16FC0 */
     ps2000_op_ctx_t             check_readonly;         /* sub_138A0 */
     ps2000_op_ctx_t             delegate_a;             /* sub_13D80 */
+
+    /* FIX #1: Advanced Trigger Delegates */
+    ps2000_op_adv_trig_props_t  set_trigger_properties; /* sub_26800 delegate */
+    ps2000_op_adv_trig_conds_t  set_trigger_conditions; /* sub_268E0 delegate */
+    ps2000_op_adv_trig_dirs_t   set_trigger_directions; /* sub_269C0 delegate */
+    ps2000_op_pwq_t             set_pwq;                /* sub_26AA0 delegate */
+    ps2000_op_adv_trig_delay_t  set_trigger_delay;      /* sub_26B80 delegate */
+
+    /* FIX #1: Streaming Delegate */
+    ps2000_op_start_streaming_t start_streaming;        /* sub_252A0 delegate */
 
     /* Stub methods (originally xor eax, eax; retn) */
     ps2000_op_void_t            stub_01;                /* sub_2ADA0 */
