@@ -9,6 +9,10 @@
 
 extern ps2000_global_state_t g_ps2000_state;
 
+/* Placeholder for embedded firmware data if needed */
+extern const uint8_t _ps2000_fw_data[];
+extern const uint32_t _ps2000_fw_data_len;
+
 /****************************************************************************
 * ps2000_open_unit
 *
@@ -49,6 +53,26 @@ int16_t ps2000_open_unit(void) {
         _ps2000_usb_close_device(ctx);
         _ps2000_init_destroy_context(ctx);
         return 0;
+    }
+
+    /* FIX #4: Load firmware if FPGA is not already loaded */
+    if (!ctx->info.fpga_loaded) {
+        PS2000_LOG_INF("Loading firmware...");
+        status = _ps2000_fw_load(ctx, _ps2000_fw_data, _ps2000_fw_data_len);
+        if (status != PS2000_OK) {
+            PS2000_LOG_ERR("Firmware load failed: %d", status);
+            _ps2000_usb_close_device(ctx);
+            _ps2000_init_destroy_context(ctx);
+            return 0;
+        }
+        /* Re-initialize hardware after firmware load if necessary */
+        status = _ps2000_hw_init_sequence(ctx);
+        if (status != PS2000_OK) {
+             PS2000_LOG_ERR("Post-firmware HW init failed: %d", status);
+             _ps2000_usb_close_device(ctx);
+             _ps2000_init_destroy_context(ctx);
+             return 0;
+        }
     }
 
     /* Register context in global array */

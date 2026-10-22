@@ -48,13 +48,21 @@ int16_t ps2000_set_trigger2(int16_t handle,
         ctx->capture.pre_trigger = (uint32_t)delay_int;
     }
 
-    uint16_t trig_config = ((uint16_t)source & 0x07) |
-                           (((uint16_t)direction & 0x01) << 3) |
-                           (((uint16_t)threshold & 0x0FFF) << 4);
-    
-    status = _ps2000_hw_io_cmd(ctx, PS2000_IO_CMD_READ_WRITE_ADC_SPI,
-                               (uint16_t)trig_config, (uint16_t)auto_trigger_ms);
-    
+    /* FIX #1: Check if ops delegate exists, otherwise use direct HW call */
+    if (ctx->ops.set_trigger) {
+        status = (ps2000_status_t)ctx->ops.set_trigger(ctx, 
+            ((uint16_t)source & 0x07) |
+            (((uint16_t)direction & 0x01) << 3) |
+            (((uint16_t)threshold & 0x0FFF) << 4), 
+            (uint16_t)auto_trigger_ms);
+    } else {
+        uint16_t trig_config = ((uint16_t)source & 0x07) |
+                               (((uint16_t)direction & 0x01) << 3) |
+                               (((uint16_t)threshold & 0x0FFF) << 4);
+        status = _ps2000_hw_io_cmd(ctx, PS2000_IO_CMD_READ_WRITE_ADC_SPI,
+                                   (uint16_t)trig_config, (uint16_t)auto_trigger_ms);
+    }
+
     pthread_mutex_unlock(&ctx->sync.mutex);
     return (status == PS2000_OK) ? 1 : 0;
 }
@@ -107,6 +115,7 @@ int16_t ps2000_stop(int16_t handle) {
     return (status == PS2000_OK) ? 1 : 0;
 }
 
+/* FIX #3: Simplified run_block to delegate heavy lifting to ops table */
 int16_t ps2000_run_block(int16_t handle,
                          int32_t no_of_values,
                          int16_t timebase,
@@ -119,55 +128,21 @@ int16_t ps2000_run_block(int16_t handle,
         &ctx->sync.mutex, PS2000_USB_TIMEOUT_MS);
     if (status != PS2000_OK) return 0;
 
-    double interval_ns;
-    if (ctx->ops.calc_timebase) {
-        interval_ns = ctx->ops.calc_timebase(ctx, (uint32_t)timebase);
-    } else {
-        interval_ns = _ps2000_math_timebase_interval((uint32_t)timebase);
-    }
-
-    if (oversample > 1) {
-        interval_ns *= (double)oversample;
-    }
-    ctx->capture.sample_interval = interval_ns;
-    ctx->capture.timebase_index = (uint16_t)timebase;
-
-    uint32_t pre_trigger = (uint32_t)(no_of_values / 10);
-    uint32_t post_trigger = (uint32_t)no_of_values - pre_trigger;
-    if (pre_trigger < 2) pre_trigger = 2;
-
-    status = _ps2000_osc_validate_buffer(pre_trigger, post_trigger,
-                                         ctx->capture.buffer_size);
-    if (status != PS2000_OK) {
-        pthread_mutex_unlock(&ctx->sync.mutex);
-        return 0;
-    }
-
-    uint32_t total = pre_trigger + post_trigger;
-    for (uint32_t ch = 0; ch < PS2000_MAX_CHANNELS; ch++) {
-        if ((ctx->capture.channel_mask & (1U << ch)) == 0U) continue;
-        if (ctx->capture.channel_buffers[ch] == NULL) {
-            ctx->capture.channel_buffers[ch] =
-                (int16_t*)calloc(total, sizeof(int16_t));
-            if (!ctx->capture.channel_buffers[ch]) {
-                pthread_mutex_unlock(&ctx->sync.mutex);
-                return 0;
-            }
-        }
-    }
-
-    ctx->capture.pre_trigger = pre_trigger;
-    ctx->capture.buffer_size = total;
-    ctx->capture.pending_ops = (uint16_t)ctx->capture.channel_mask;
-
+    /* FIX #3: Delegate to ops table if available, matching original asm behavior */
     if (ctx->ops.run_block) {
-        status = (ps2000_status_t)ctx->ops.run_block(ctx, pre_trigger, post_trigger);
+        /* The ops->run_block is expected to handle timebase calc and buffer setup internally */
+        status = (ps2000_status_t)ctx->ops.run_block(ctx, 
+                                                     (uint32_t)no_of_values, 
+                                                     (uint32_t)timebase);
+        
+        /* Calculate indisposed time manually if not returned by ops */
+        if (time_indisposed_ms) {
+             double interval_ns = _ps2000_math_timebase_interval((uint32_t)timebase);
+             if (oversample > 1) interval_ns *= (double)oversample;
+             *time_indisposed_ms = (int32_t)((double)no_of_values * interval_ns / 1e6);
+        }
     } else {
         status = PS2000_ERR_NOT_IMPLEMENTED;
-    }
-
-    if (time_indisposed_ms) {
-        *time_indisposed_ms = (int32_t)((double)total * interval_ns / 1e6);
     }
 
     pthread_mutex_unlock(&ctx->sync.mutex);
