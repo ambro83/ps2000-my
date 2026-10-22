@@ -38,9 +38,14 @@ int16_t ps2000_run_streaming(int16_t handle,
     }
     ctx->streaming.stream_write_pos = 0;
 
+    /* FIX #2: Delegate to ops table if available */
     uint16_t interval_us = (uint16_t)(sample_interval_ms * 1000);
-    status = _ps2000_hw_io_cmd(ctx, PS2000_IO_CMD_DELAY_MS,
-                               interval_us, (uint16_t)(max_samples & 0xFFFF));
+    if (ctx->ops.start_streaming) {
+        status = (ps2000_status_t)ctx->ops.start_streaming(ctx, interval_us, (uint32_t)max_samples, 0);
+    } else {
+        status = _ps2000_hw_io_cmd(ctx, PS2000_IO_CMD_DELAY_MS,
+                                   interval_us, (uint16_t)(max_samples & 0xFFFF));
+    }
 
     if (status == PS2000_OK) {
         PS2000_LOG_INF("Streaming started: interval=%dms max=%d",
@@ -97,9 +102,18 @@ int16_t ps2000_run_streaming_ns(int16_t handle,
     ctx->streaming.stream_write_pos = 0;
 
     uint32_t interval_int = (uint32_t)_ps2000_math_round_fast(interval_ns);
-    status = _ps2000_hw_io_cmd(ctx, PS2000_IO_CMD_DELAY_MS,
-                               (uint16_t)(interval_int & 0xFFFF),
-                               (uint16_t)(max_samples & 0xFFFF));
+    
+    /* FIX #2: Delegate to ops table if available */
+    if (ctx->ops.start_streaming) {
+         status = (ps2000_status_t)ctx->ops.start_streaming(ctx, 
+                                                            (uint16_t)(interval_int & 0xFFFF), 
+                                                            max_samples, 
+                                                            auto_stop);
+    } else {
+        status = _ps2000_hw_io_cmd(ctx, PS2000_IO_CMD_DELAY_MS,
+                                   (uint16_t)(interval_int & 0xFFFF),
+                                   (uint16_t)(max_samples & 0xFFFF));
+    }
 
     if (status == PS2000_OK) {
         PS2000_LOG_INF("Streaming (ns) started: interval=%uns max=%u agg=%u",

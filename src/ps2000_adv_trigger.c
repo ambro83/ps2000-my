@@ -36,9 +36,17 @@ int16_t ps2000SetAdvTriggerChannelProperties(int16_t handle,
         ctx->capture.trig_alt_param_b = (uint16_t)channelProperties[i].hysteresis;
     }
 
-    status = _ps2000_hw_io_cmd(ctx, PS2000_IO_CMD_READ_WRITE_FPGA_REGISTER,
-                               0x10, (uint16_t)(autoTriggerMilliseconds & 0xFFFF));
-    
+    /* FIX #1: Use ops delegate if available */
+    if (ctx->ops.set_trigger_properties) {
+        status = (ps2000_status_t)ctx->ops.set_trigger_properties(ctx, 
+                                                                  channelProperties, 
+                                                                  nChannelProperties, 
+                                                                  autoTriggerMilliseconds);
+    } else {
+        status = _ps2000_hw_io_cmd(ctx, PS2000_IO_CMD_READ_WRITE_FPGA_REGISTER,
+                                   0x10, (uint16_t)(autoTriggerMilliseconds & 0xFFFF));
+    }
+
     pthread_mutex_unlock(&ctx->sync.mutex);
     return (status == PS2000_OK) ? 1 : 0;
 }
@@ -67,9 +75,14 @@ int16_t ps2000SetAdvTriggerChannelConditions(int16_t handle,
 
     ctx->capture.channel_mask = (uint8_t)trigger_mask;
 
-    status = _ps2000_hw_io_cmd(ctx, PS2000_IO_CMD_READ_WRITE_FPGA_REGISTER,
-                               0x11, trigger_mask);
-    
+    /* FIX #1: Use ops delegate if available */
+    if (ctx->ops.set_trigger_conditions) {
+        status = (ps2000_status_t)ctx->ops.set_trigger_conditions(ctx, conditions, nConditions);
+    } else {
+        status = _ps2000_hw_io_cmd(ctx, PS2000_IO_CMD_READ_WRITE_FPGA_REGISTER,
+                                   0x11, trigger_mask);
+    }
+
     pthread_mutex_unlock(&ctx->sync.mutex);
     return (status == PS2000_OK) ? 1 : 0;
 }
@@ -93,9 +106,14 @@ int16_t ps2000SetAdvTriggerChannelDirections(int16_t handle,
                           (((uint16_t)channelD & 0x07) << 9) |
                           (((uint16_t)ext & 0x07) << 12);
 
-    status = _ps2000_hw_io_cmd(ctx, PS2000_IO_CMD_READ_WRITE_FPGA_REGISTER,
-                               0x12, directions);
-    
+    /* FIX #1: Use ops delegate if available */
+    if (ctx->ops.set_trigger_directions) {
+        status = (ps2000_status_t)ctx->ops.set_trigger_directions(ctx, directions);
+    } else {
+        status = _ps2000_hw_io_cmd(ctx, PS2000_IO_CMD_READ_WRITE_FPGA_REGISTER,
+                                   0x12, directions);
+    }
+
     pthread_mutex_unlock(&ctx->sync.mutex);
     return (status == PS2000_OK) ? 1 : 0;
 }
@@ -114,26 +132,25 @@ int16_t ps2000SetPulseWidthQualifier(int16_t handle,
         &ctx->sync.mutex, PS2000_USB_TIMEOUT_MS);
     if (status != PS2000_OK) return 0;
 
-    status = _ps2000_hw_io_cmd(ctx, PS2000_IO_CMD_READ_WRITE_FPGA_REGISTER,
-                               0x13, (uint16_t)(lower & 0xFFFF));
-    if (status != PS2000_OK) {
-        pthread_mutex_unlock(&ctx->sync.mutex);
-        return 0;
+    /* FIX #1: Use ops delegate if available */
+    if (ctx->ops.set_pwq) {
+        status = (ps2000_status_t)ctx->ops.set_pwq(ctx, conditions, nConditions, 
+                                                   (uint16_t)direction, lower, upper, (uint32_t)type);
+    } else {
+        status = _ps2000_hw_io_cmd(ctx, PS2000_IO_CMD_READ_WRITE_FPGA_REGISTER,
+                                   0x13, (uint16_t)(lower & 0xFFFF));
+        if (status == PS2000_OK) {
+            status = _ps2000_hw_io_cmd(ctx, PS2000_IO_CMD_READ_WRITE_FPGA_REGISTER,
+                                       0x14, (uint16_t)(upper & 0xFFFF));
+        }
+        if (status == PS2000_OK) {
+            uint16_t pwq_config = ((uint16_t)type & 0x07) |
+                                  (((uint16_t)direction & 0x07) << 3);
+            status = _ps2000_hw_io_cmd(ctx, PS2000_IO_CMD_READ_WRITE_FPGA_REGISTER,
+                                       0x15, pwq_config);
+        }
     }
 
-    status = _ps2000_hw_io_cmd(ctx, PS2000_IO_CMD_READ_WRITE_FPGA_REGISTER,
-                               0x14, (uint16_t)(upper & 0xFFFF));
-    if (status != PS2000_OK) {
-        pthread_mutex_unlock(&ctx->sync.mutex);
-        return 0;
-    }
-
-    uint16_t pwq_config = ((uint16_t)type & 0x07) |
-                          (((uint16_t)direction & 0x07) << 3);
-    
-    status = _ps2000_hw_io_cmd(ctx, PS2000_IO_CMD_READ_WRITE_FPGA_REGISTER,
-                               0x15, pwq_config);
-    
     pthread_mutex_unlock(&ctx->sync.mutex);
     return (status == PS2000_OK) ? 1 : 0;
 }
@@ -160,9 +177,14 @@ int16_t ps2000SetAdvTriggerDelay(int16_t handle,
         ctx->capture.trig_alt_param_a = (uint16_t)delay_int;
     }
 
-    status = _ps2000_hw_io_cmd(ctx, PS2000_IO_CMD_READ_WRITE_FPGA_REGISTER,
-                               0x16, (uint16_t)(delay & 0xFFFF));
-    
+    /* FIX #1: Use ops delegate if available */
+    if (ctx->ops.set_trigger_delay) {
+        status = (ps2000_status_t)ctx->ops.set_trigger_delay(ctx, delay, preTriggerDelay);
+    } else {
+        status = _ps2000_hw_io_cmd(ctx, PS2000_IO_CMD_READ_WRITE_FPGA_REGISTER,
+                                   0x16, (uint16_t)(delay & 0xFFFF));
+    }
+
     pthread_mutex_unlock(&ctx->sync.mutex);
     return (status == PS2000_OK) ? 1 : 0;
 }
